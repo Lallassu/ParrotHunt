@@ -8,10 +8,10 @@ ParrotHunt is a ThreeJS WebGL game with a retro "Duck Hunt" feeling (remember th
 
 I haven't had time to create some description of the code layout but if you have any questions, feel free to contact me (nergal@nergal.se).
 
-- ## Testing
--
-- Install nodejs and run *"cd server; nodejs server.js"*. Then point your browser to *http://localhost:8080*
--
-- ## Screenshot
-- ![alt tag](https://raw.github.com/lallassu/VoxLords/master/promo.png)
--
+## Testing
+
+Install nodejs and run *"cd server; nodejs server.js"*. Then point your browser to *http://localhost:8080*
+
+ ## Screenshot
+![alt tag](https://raw.github.com/lallassu/ParrotHunt/master/promo.png)
+
