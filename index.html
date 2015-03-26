@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <meta name="description" content="">
+    <meta name="author" content="">
+    <link rel="stylesheet" type="text/css" href="css/style.css">
+    <title>Parrot Hunt</title>
+
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script src="libs/three.min.js"></script>
+    <script src="libs/Stats.js"></script>
+    <script src="libs/ShaderParticles.js"></script>
+    <script src="libs/jquery-1.9.1.js"></script>
+    <script src="libs/MTLLoader.js"></script>
+    <script src="libs/OBJMTLLoader.js"></script>
+    <script src="libs/SubdivisionModifier.js"></script>
+    <script src="libs/THREEx.KeyboardState.js"></script>
+    <script src="libs/THREEx.FullScreen.js"></script>
+    <script src="libs/THREEx.WindowResize.js"></script>
+    <script src="libs/ExplodeModifier.js"></script>
+    <script src="libs/TessellateModifier.js"></script>
+    <script src="libs/helvetiker_bold.typeface.js"></script>
+    <script type="x-shader/x-vertex" id="vertexshaderExplode">
+      uniform float time;
+      attribute vec3 customColor;
+      attribute vec3 displacement;
+      varying vec3 vNormal;
+      varying vec3 vColor;
+      float quadraticEaseInOut ( float k ) {
+      if ( ( k *= 2.0 ) < 1.0 ) return 0.5 * k * k;
+          return - 0.5 * ( --k * ( k - 2.0 ) - 1.0 );
+      }	  
+      void main() {
+         vNormal = normal;
+	 vColor = customColor;  
+	 float t = abs(time * 2.0 - 1.0);
+	 vec3 newPosition = position + time * displacement;
+	 gl_Position = projectionMatrix * modelViewMatrix * vec4( newPosition, 1.0 );
+       }			  
+    </script>
+    
+    <script type="x-shader/x-fragment" id="fragmentshaderExplode">
+
+      varying vec3 vNormal;
+      varying vec3 vColor;
+
+      void main() {
+
+      const float ambient = 0.005;
+
+      vec3 light = vec3( 1.0 );
+      light = normalize( light );
+
+      float directional = max( dot( vNormal, light ), 0.0 );
+
+      gl_FragColor = vec4( ( directional + ambient ) * vColor, 1.0 );
+      gl_FragColor.xyz = sqrt( gl_FragColor.xyz );
+
+      }
+
+    </script>
+
+    <script id="waterShader" type="x-shader/x-vertex"> 
+      uniform sampler2D baseTexture;
+      uniform float baseSpeed;
+      uniform sampler2D noiseTexture;
+      uniform float noiseScale;
+      uniform float alpha;
+      uniform float time;
+      
+      varying vec2 vUv;
+      void main() 
+      {
+      vec2 uvTimeShift = vUv + vec2( -0.7, 1.5 ) * time * baseSpeed;
+      vec4 noiseGeneratorTimeShift = texture2D( noiseTexture, uvTimeShift );
+      vec2 uvNoiseTimeShift = vUv + noiseScale * vec2( noiseGeneratorTimeShift.r, noiseGeneratorTimeShift.b );
+      vec4 baseColor = texture2D( baseTexture, uvNoiseTimeShift );
+      
+      baseColor.a = alpha;
+      gl_FragColor = baseColor;
+      }  
+    </script>
+
+    <script id="terrainVertexShader" type="x-shader/x-vertex">
+      uniform sampler2D bumpTexture;
+      uniform float bumpScale;
+
+      varying float vAmount;
+      varying vec2 vUV;
+
+      void main() 
+      { 
+      vUV = uv;
+      vec4 bumpData = texture2D( bumpTexture, uv );
+      
+      vAmount = bumpData.r; // assuming map is grayscale it doesn't matter if you use r, g, or b.
+      
+      // move the position along the normal
+      vec3 newPosition = position + normal * bumpScale * vAmount;
+      
+      gl_Position = projectionMatrix * modelViewMatrix * vec4( newPosition, 1.0 );
+      }
+    </script>
+    <script id="terrainFragmentShader" type="x-shader/x-vertex"> 
+      uniform sampler2D oceanTexture; 
+      uniform sampler2D sandyTexture;
+      uniform sampler2D grassTexture;
+      uniform sampler2D rockyTexture;
+      uniform sampler2D snowyTexture;
+
+      varying vec2 vUV;
+
+      varying float vAmount;
+
+      void main() 
+      {
+      /*
+      vec4 water = (smoothstep(0.0, 0.25, vAmount) - smoothstep(0.15, 0.35, vAmount)) * texture2D( oceanTexture, vUV * 10.0 ); 
+      vec4 sandy = (smoothstep(0.20, 0.34, vAmount) - smoothstep(0.35, 0.50, vAmount)) * texture2D( sandyTexture, vUV * 10.0 );
+      */
+      vec4 water = (smoothstep(0.0, 0.12, vAmount) - smoothstep(0.15, 0.35, vAmount)) * texture2D( oceanTexture, vUV * 10.0 ); 
+      vec4 sandy = (smoothstep(0.15, 0.34, vAmount) - smoothstep(0.35, 0.50, vAmount)) * texture2D( sandyTexture, vUV * 10.0 );
+      vec4 grass = (smoothstep(0.30, 0.50, vAmount) - smoothstep(0.70, 0.80, vAmount)) * texture2D( grassTexture, vUV * 10.0 );
+      vec4 rocky = (smoothstep(0.31, 0.85, vAmount)) * texture2D( rockyTexture, vUV * 10.0 ); 
+      gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0) + water + sandy + grass + rocky; // + snowy, 1.0); 
+      }  
+    </script>
+  <script id="sunVertexShader" type="x-shader/x-vertex">
+      varying vec3 vNormal;
+      void main() 
+      {
+      vNormal = normalize( normalMatrix * normal );
+      gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+      }
+    </script>
+    
+    <script id="sunFragmentShader" type="x-shader/x-vertex"> 
+      varying vec3 vNormal;
+      void main() 
+      {
+      float intensity = pow( 0.7 - dot( vNormal, vec3( 0.0, 0.0, 1.0 ) ), 4.0 ); 
+      gl_FragColor = vec4(0.573 , 0.225, 0.008, 0.7 ) * intensity;
+      }
+    </script>
+
+    <style>
+      @font-face
+      {
+      font-family: bit;
+      src: url(fonts/8bit.ttf);
+      }
+      @font-face
+      {
+      font-family: duckhunt;
+      src: url(fonts/duckhunt.ttf);
+      }
+      .bit_font {
+      font-family: bit;
+      }
+      .duckhunt_font {
+      font-family: duckhunt;
+      }
+      body {
+      cusor: none;
+      background-color: #000000;
+      color: #ffffff;
+      font-family:Monospace;
+      font-size:13px;
+      text-align:center;
+      font-weight: bold;
+      
+      background-color: #000000;
+      margin: 0 auto;
+      overflow: hidden; 
+      }
+
+    </style>
+  </head>
+  <body>
+
+    <canvas style="display: none; z-index: 1000; margin-right: 0px; padding-left: 0px;  opacity: 0.5; position: absolute;" id="radar" width="300" height="300"></canvas>
+    
+    <canvas style="display: none; margin-right: 0px; padding-left: 600px;  opacity: 0.5; position: absolute;" id="noise_1" width="300" height="300"></canvas> 
+    <div style="position: absolute; margin-bottom: 0px;" id="stats"></div>
+
+    <div id="timer" class="bit_font msgboard" style="display: none;"> 
+      <p id="timer_msg" class="bit_font"></p>
+    </div>
+
+    <div id="round" class="nocursor bit_font msgboard" style="display: none;"> 
+      <h1 id="round_msg" class="bit_font"></h1>
+      <h1 id="round_msg2" class="bit_font"></h1>
+    </div>
+    
+    <div id="msgboard" class="msgboard" style="display: none;"> 
+      <h1 id="msgboard_msg" class="bit_font"></h1>
+    </div>
+
+ <div id="info" class="info white">
+   <legend id="logo" class="duckhunt_font">
+     <span><font color="#66CCFF">Parrot Hunt</font><hr></span>
+   </legend>
+   <div id="menu1">
+     
+   </div>
+   <div id="menu_" style="display: none;">
+     <p id="play" class="bit_font" style="font-size: 20px; text-align: left; margin-left: 30%; position: relative;"><a href="javascript:GetName();">GAME A&nbsp;&nbsp;PLAY</a></p>
+     <p id="play" class="bit_font" style="font-size: 20px; text-align: left; margin-left: 30%; position: relative;"><a href="javascript:About();">GAME B&nbsp;&nbsp;ABOUT</a></p>
+     <p id="play" class="bit_font" style="font-size: 20px; text-align: left; margin-left: 30%; position: relative;"><a href="javascript:Credits();">GAME C&nbsp;&nbsp;CREDITS</a></p>
+   </div>
+   <div id="fb-root"></div>
+    <div id="info_loadbar" class="meter blue bit_font">
+      <p>Loading - <font id="info_load_percent"></font></p>
+      <span id="info_load" style="width: 0%;"></span>
+    </div>
+   <div id="main_window" style="overflow-y: scroll; max-height: 350px;" class="sub_window">
+     <span><font color="#66CCFF" class="bit_font">TOP SCORE</font><hr></span>
+     <br>
+     <div class="CSSTableGenerator" >
+       <table cellspacing='0' id="ranking" class="bit_font" >
+	 <tr></tr>
+       </table>
+     </div>
+ </div>
+   <div id="stat">
+   </div>
+   <div style="height: 30px; width: 100%; padding-top: 20px;">
+     <div class="fb-like" data-href="http://parrothunt.nergal.se" data-layout="button_count" data-action="like" data-show-faces="true" data-share="true"></div>
+     <a href="https://twitter.com/share" class="twitter-share-button" data-url="http://parrothunt.nergal.se" data-text="Like Duck Hunt but with parrots and in 3D :)" data-hashtags="parrothunt">Tweet</a>
+     <script>!function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0],p=/^http:/.test(d.location)?'http':'https';if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src=p+'://platform.twitter.com/widgets.js';fjs.parentNode.insertBefore(js,fjs);}}(document, 'script', 'twitter-wjs');</script>
+   </div>
+</div>
+
+ <div id="container"></div>
+
+ <div id="hud" style="display: none;">
+   <div id="inner_box"> 
+     <div id="box-1" class="box bit_font">
+       <img id="shot1" src="css/bullet.png"></img>
+       <img id="shot2" src="css/bullet.png"></img>
+       <img id="shot3" src="css/bullet.png"></img>
+       <span style="color: #66CCFF; padding: 0px; padding-left: 2px;">SHOT</span>
+     </div>
+     <div id="box-2" class="box bit_font">
+       <span style="padding: 0px; padding-left: 2px;">HIT</span>
+       <img id="duck1" src="css/duck_alive.png"></img>
+       <img id="duck2" src="css/duck_alive.png"></img>
+       <img id="duck3" src="css/duck_alive.png"></img>
+       <img id="duck4" src="css/duck_alive.png"></img>
+       <img id="duck5" src="css/duck_alive.png"></img>
+       <img id="duck6" src="css/duck_alive.png"></img>
+       <img id="duck7" src="css/duck_alive.png"></img>
+       <img id="duck8" src="css/duck_alive.png"></img>
+       <img id="duck9" src="css/duck_alive.png"></img>
+       <img id="duck10" src="css/duck_alive.png"></img>
+       <br>
+       <span id="ammo" style="margin-left: 65px; color: #66CCFF">|||||||||||||||||||||||||||||||||||</span>
+     </div>
+     <div id="box-3" class="box bit_font">
+       <span id="score" style="color: #FFFFFF; padding: 0px; padding-left: 2px;">000200</span>
+       <span style="padding: 5px; color: #FFFFFF; padding: 0px; padding-left: 2px;">SCORE</span>
+     </div>
+   </div>
+ </div>
+
+<div id="about" style="display: none;">
+  <h3 class="bit_font" style="color: #66CCFF">About</h3>
+  <span class="bit_font"><font color="#66CCFF">Author:</font> nergal</span><br>
+  <span class="bit_font"><font color="#66CCFF">IRC:</font> proc_ @ freenode.net three.js channel</span><br>
+  <span class="bit_font"><font color="#66CCFF">E-mail:</font> nergal@nergal.se</span><br><br>
+  <span><a class="bit_font" style="color: #FF3333;" href="javascript:Close();">Close</a></span>
+</div>
+
+
+<div id="credits" style="display: none;">
+  <h3 class="bit_font" style="color: #66CCFF">Credits</h3>
+  <span class="bit_font"><a target="_blank" href="http://threejs.org">three.js</a> - mr.doob's great webgl library</span><br>
+  <span class="bit_font"><a target="_blank" href="http://soundbible.com">soundbible</a> - All sound effects</span><br>
+  <span class="bit_font"><a target="_blank" href="http://ro.me">ROME-3 Dreams of Black</a>- Bird models</span><br><br>
+  <span><a class="bit_font" style="color: #FF3333;" href="javascript:Close();">Close</a></span>
+</div>
+
+<div class="bit_font" id="getname" style="display: none;">
+  <br>
+  <span style="color: #66CCFF;">Please enter name:</span><br>
+  <input maxlength="15" class="bit_font" type="text" id="name"></input><br>
+  <a style="color: #33FF33; font-size: 17px;" href="javascript:Play();">PLAY!</a>
+  <span style="font-size: 10px; font-family: verdana;">
+  <p><font color="#FF3333">Left-Mouse button</font> to shoot.<br> Hold <font color="#FF3333">Left-Mouse button</font> to zoom. <br><font color="#FF3333">Left-Arrow (or A)</font> and <font color="#FF3333">Right-Arrow (or D)</font> to spin.</p>
+  <p>
+    Parrots <font color="#33FF33">+150p</font><br> 
+    Ammo left<font color="#33FF33">+50p</font><br> 
+    Time used<font color="#FF3333">-30p</font><br> 
+    Flamingos<font color="#FF3333">-100p</font><br> 
+  </p>
+  </span>
+</div>
+
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-52175199-1', 'nergal.se');
+  ga('send', 'pageview');
+
+</script>
+
+  </body>
+  <script src="js/utils.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/env.js"></script>
+  <script src="js/birds.js"></script>
+  <script src="js/loader.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/main.js"></script>
+  <script>
+    var game = new Game();
+    $('#menu1').html($('#menu_').html());
+    $('#container').css( 'cursor', 'url("css/crosshair2.png"), auto');
+    $('#hud').css( 'cursor', 'url("css/crosshair2.png"), auto');
+    $('#msgboard').css( 'cursor', 'url("css/crosshair2.png"), auto');
+    $('#timer').css( 'cursor', 'url("css/crosshair2.png"), auto');
+    game.Init();
+    function About() {
+    $('#menu1').html($('#about').html());
+    }
+    function Credits() {
+    $('#menu1').html($('#credits').html());
+    }
+    function Close() {
+    $('#menu1').html($('#menu_').html());    
+    }
+
+    function GetName() {
+        $('#info').hide();
+        if($('#name').val() == "") {
+            $('#getname').show();
+        }else {
+            Play();
+        }
+    }    
+    function Play() {
+        if($('#name').val() == "") {
+            GetName();
+        } else {
+            game.player.name = $('#name').val();
+            $('#getname').hide();
+            game.StartGame();
+        }
+    }
+  </script>
+<script>(function(d, s, id) {
+  var js, fjs = d.getElementsByTagName(s)[0];
+  if (d.getElementById(id)) return;
+  js = d.createElement(s); js.id = id;
+  js.src = "//connect.facebook.net/sv_SE/sdk.js#xfbml=1&appId=166751083448852&version=v2.0";
+  fjs.parentNode.insertBefore(js, fjs);
+}(document, 'script', 'facebook-jssdk'));</script>
+</html>
