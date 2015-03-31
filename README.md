@@ -12,6 +12,6 @@ I haven't had time to create some description of the code layout but if you have
 
 Install nodejs and run *"cd server; nodejs server.js"*. Then point your browser to *http://localhost:8080*
 
- ## Screenshot
+## Screenshot
 ![alt tag](https://raw.github.com/lallassu/ParrotHunt/master/promo.png)
 
